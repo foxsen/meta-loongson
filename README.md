@@ -15,6 +15,7 @@ git clone -b loongarch https://github.com/foxsen/poky
 ```bash
 cd poky
 git clone https://github.com/foxsen/meta-loongson
+git checkout loongarch
 ```
 
 3. setup the environment
