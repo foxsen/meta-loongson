@@ -282,4 +282,4 @@ CONF_VERSION = "2"
 
 PREFERRED_PROVIDER_virtual/kernel ?= "linux-yocto-loongarch"
 
-IMAGE_INSTALL:append = "edk2-loongarch"
+IMAGE_INSTALL:append = " edk2-loongarch"
