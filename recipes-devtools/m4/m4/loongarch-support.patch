@@ -1,0 +1,48 @@
+diff -ur m4-1.4.19.ori/m4/host-cpu-c-abi.m4 m4-1.4.19/m4/host-cpu-c-abi.m4
+--- m4-1.4.19.ori/m4/host-cpu-c-abi.m4	2021-04-23 04:28:47.000000000 +0800
++++ m4-1.4.19/m4/host-cpu-c-abi.m4	2022-12-03 13:03:41.267582348 +0800
+@@ -237,6 +237,11 @@
+          gl_cv_host_cpu_c_abi=powerpc
+          ;;
+ 
++       # TODO: handle 32bit and the variants
++       loongarch64 )
++         gl_cv_host_cpu_c_abi=loongarch64
++         ;;
++
+        riscv32 | riscv64 )
+          # There are 2 architectures (with variants): rv32* and rv64*.
+          AC_COMPILE_IFELSE(
+@@ -468,7 +473,7 @@
+        case "$gl_cv_host_cpu_c_abi" in
+          i386 | x86_64-x32 | arm | armhf | arm64-ilp32 | hppa | ia64-ilp32 | mips | mipsn32 | powerpc | riscv*-ilp32* | s390 | sparc)
+            gl_cv_host_cpu_c_abi_32bit=yes ;;
+-         x86_64 | alpha | arm64 | hppa64 | ia64 | mips64 | powerpc64 | powerpc64-elfv2 | riscv*-lp64* | s390x | sparc64 )
++         x86_64 | alpha | arm64 | hppa64 | ia64 | mips64 | powerpc64 | powerpc64-elfv2 | riscv*-lp64* | s390x | sparc64 | loongarch64)
+            gl_cv_host_cpu_c_abi_32bit=no ;;
+          *)
+            gl_cv_host_cpu_c_abi_32bit=unknown ;;
+@@ -619,6 +624,10 @@
+            gl_cv_host_cpu_c_abi_32bit=yes
+            ;;
+ 
++         loongarch64 )
++           gl_cv_host_cpu_c_abi_32bit=no
++           ;;
++
+          riscv32 | riscv64 )
+            # There are 6 ABIs: ilp32, ilp32f, ilp32d, lp64, lp64f, lp64d.
+            # Size of 'long' and 'void *':
+diff -ur m4-1.4.19.ori/m4/stack-direction.m4 m4-1.4.19/m4/stack-direction.m4
+--- m4-1.4.19.ori/m4/stack-direction.m4	2021-05-19 22:35:46.000000000 +0800
++++ m4-1.4.19/m4/stack-direction.m4	2022-12-03 13:03:41.267582348 +0800
+@@ -53,7 +53,8 @@
+       sparc* | \
+       v850 | \
+       vax | \
+-      xtensa)
++      xtensa | \
++      loongarch*)
+         sv_cv_stack_direction=-1 ;;
+       c4x | \
+       dsp16xx | \
