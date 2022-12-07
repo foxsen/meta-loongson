@@ -1,0 +1,42 @@
+--- librsvg-2.54.5.ori/vendor/cfg-expr/src/targets/builtins.rs	2022-12-07 09:12:14.221447036 +0800
++++ librsvg-2.54.5/vendor/cfg-expr/src/targets/builtins.rs	2022-12-07 09:12:02.100984772 +0800
+@@ -974,6 +974,18 @@
+         panic: Panic::unwind,
+     },
+     TargetInfo {
++        triple: Triple::new_const("loongarch64-unknown-linux-gnuabi64"),
++        os: Some(Os::linux),
++        arch: Arch::loongarch64,
++        env: Some(Env::gnu),
++        vendor: Some(Vendor::unknown),
++        families: Families::unix,
++        pointer_width: 64,
++        endian: Endian::little,
++        has_atomics: HasAtomics::atomic_8_16_32_64_ptr,
++        panic: Panic::unwind,
++    },
++    TargetInfo {
+         triple: Triple::new_const("m68k-unknown-linux-gnu"),
+         os: Some(Os::linux),
+         arch: Arch::m68k,
+@@ -2181,6 +2193,7 @@
+     pub const avr: Arch = Arch::new_const("avr");
+     pub const bpf: Arch = Arch::new_const("bpf");
+     pub const hexagon: Arch = Arch::new_const("hexagon");
++    pub const loongarch64: Arch = Arch::new_const("loongarch64");
+     pub const m68k: Arch = Arch::new_const("m68k");
+     pub const mips: Arch = Arch::new_const("mips");
+     pub const mips64: Arch = Arch::new_const("mips64");
+diff -urN librsvg-2.54.5.ori/vendor/serde/build.rs librsvg-2.54.5/vendor/serde/build.rs
+--- librsvg-2.54.5.ori/vendor/serde/build.rs	2022-08-27 03:09:14.000000000 +0800
++++ librsvg-2.54.5/vendor/serde/build.rs	2022-12-03 16:29:17.534605709 +0800
+@@ -100,7 +100,8 @@
+         || target.starts_with("powerpc64")
+         || target.starts_with("sparc64")
+         || target.starts_with("mips64el")
+-        || target.starts_with("riscv64");
++        || target.starts_with("riscv64")
++        || target.starts_with("loongarch64");
+     let has_atomic32 = has_atomic64 || emscripten;
+     if minor < 34 || !has_atomic64 {
+         println!("cargo:rustc-cfg=no_std_atomic64");
