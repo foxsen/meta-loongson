@@ -5,7 +5,8 @@ require recipes-kernel/linux/linux-yocto.inc
 
 SRC_URI = "git://github.com/loongson/linux.git;protocol=https;branch=loongarch-next;name=machine \
            git://git.yoctoproject.org/yocto-kernel-cache;type=kmeta;name=meta;branch=yocto-5.19;destsuffix=${KMETA} \
-           file://defconfig "
+           file://defconfig \
+           file://disable-explicit-reloc-for-gcc12.patch"
 
 LIC_FILES_CHKSUM = "file://COPYING;md5=6bc538ed5bd9a7fc9398086aedcd7e46"
 

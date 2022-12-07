@@ -1,0 +1,13 @@
+--- source/arch/loongarch/Kconfig	2022-12-06 22:44:29.510587478 +0800
++++ source/arch/loongarch/Kconfig.new	2022-12-07 05:15:14.414798653 +0800
+@@ -215,9 +215,6 @@
+ 	bool
+ 	default y
+ 
+-config AS_HAS_EXPLICIT_RELOCS
+-	def_bool $(as-instr,x:pcalau12i \$t0$(comma)%pc_hi20(x))
+-
+ menu "Kernel type and options"
+ 
+ source "kernel/Kconfig.hz"
+
