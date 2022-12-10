@@ -1,0 +1,23 @@
+From 2ccdb04fe2b4784eece96c909d03b19c891f1a03 Mon Sep 17 00:00:00 2001
+From: Fuxin Zhang <fxzhang@ict.ac.cn>
+Date: Sat, 10 Dec 2022 12:45:57 +0000
+Subject: [PATCH] fix compilation on loongarch: __int128__ to __int128
+
+Signed-off-by: Fuxin Zhang <fxzhang@ict.ac.cn>
+---
+ src/longlong.h | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/src/longlong.h b/src/longlong.h
+index 6e279b4..585e33c 100644
+--- a/src/longlong.h
++++ b/src/longlong.h
+@@ -1148,7 +1148,7 @@ extern UWtype __MPN(udiv_qrnnd) (UWtype *, UWtype, UWtype, UWtype);
+   do {									\
+     UDItype __u = (u), __v = (v);					\
+     (w0) = __u * __v;							\
+-    (w1) = (unsigned __int128__) __u * __v >> 64;			\
++    (w1) = (unsigned __int128) __u * __v >> 64;			\
+   } while (0)
+ #endif
+ 
