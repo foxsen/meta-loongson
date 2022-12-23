@@ -1,0 +1,15 @@
+diff -ur ori/compiler/rustc_codegen_ssa/src/back/metadata.rs rustc-1.65.0-src/compiler/rustc_codegen_ssa/src/back/metadata.rs
+--- ori/compiler/rustc_codegen_ssa/src/back/metadata.rs	2022-12-22 14:05:47.265345594 +0000
++++ rustc-1.65.0-src/compiler/rustc_codegen_ssa/src/back/metadata.rs	2022-12-23 01:04:35.766647044 +0000
+@@ -173,6 +173,11 @@
+             let e_flags = elf::EF_RISCV_RVC | elf::EF_RISCV_FLOAT_ABI_DOUBLE;
+             e_flags
+         }
++        Architecture::LoongArch64 => {
++            // copied from `loongarch64-linux-gnuabi64-gcc foo.c -c`
++            let e_flags = elf::EF_LARCH_ABI_LP64D;
++            e_flags
++        }
+         _ => 0,
+     };
+     // adapted from LLVM's `MCELFObjectTargetWriter::getOSABI`
