@@ -495,7 +495,7 @@ diff -urN rustc-1.65.0-src.ori/compiler/rustc_target/src/spec/loongarch64_unknow
 +        arch: "loongarch64".into(),
 +        options: TargetOptions {
 +            code_model: Some(CodeModel::Medium),
-+            cpu: "generic-la64".into(),
++            cpu: "la464".into(),
 +            features: "+d".into(),
 +            llvm_abiname: "lp64d".into(),
 +            max_atomic_width: Some(64),
@@ -646,3 +646,670 @@ diff -urN rustc-1.65.0-src.ori/src/tools/build-manifest/src/main.rs rustc-1.65.0
      "m68k-unknown-linux-gnu",
      "mips-unknown-linux-gnu",
      "mips-unknown-linux-musl",
+diff --git a/compiler/rustc_ast_lowering/src/asm.rs b/compiler/rustc_ast_lowering/src/asm.rs
+index 4166b4fc2e5..1b83a5fdb4b 100644
+--- a/compiler/rustc_ast_lowering/src/asm.rs
++++ b/compiler/rustc_ast_lowering/src/asm.rs
+@@ -44,6 +44,7 @@ impl<'a, 'hir> LoweringContext<'a, 'hir> {
+                     | asm::InlineAsmArch::AArch64
+                     | asm::InlineAsmArch::RiscV32
+                     | asm::InlineAsmArch::RiscV64
++                    | asm::InlineAsmArch::LoongArch64
+             );
+             if !is_stable && !self.tcx.features().asm_experimental_arch {
+                 feature_err(
+diff --git a/compiler/rustc_codegen_gcc/src/asm.rs b/compiler/rustc_codegen_gcc/src/asm.rs
+index 52fd66af065..c0f9ea423c6 100644
+--- a/compiler/rustc_codegen_gcc/src/asm.rs
++++ b/compiler/rustc_codegen_gcc/src/asm.rs
+@@ -581,6 +581,8 @@ fn reg_to_gcc(reg: InlineAsmRegOrRegClass) -> ConstraintOrRegister {
+             InlineAsmRegClass::Avr(_) => unimplemented!(),
+             InlineAsmRegClass::Bpf(_) => unimplemented!(),
+             InlineAsmRegClass::Hexagon(HexagonInlineAsmRegClass::reg) => unimplemented!(),
++            InlineAsmRegClass::LoongArch(LoongArchInlineAsmRegClass::reg) => unimplemented!(),
++            InlineAsmRegClass::LoongArch(LoongArchInlineAsmRegClass::freg) => unimplemented!(),
+             InlineAsmRegClass::Mips(MipsInlineAsmRegClass::reg) => unimplemented!(),
+             InlineAsmRegClass::Mips(MipsInlineAsmRegClass::freg) => unimplemented!(),
+             InlineAsmRegClass::Msp430(_) => unimplemented!(),
+@@ -645,6 +647,8 @@ fn dummy_output_type<'gcc, 'tcx>(cx: &CodegenCx<'gcc, 'tcx>, reg: InlineAsmRegCl
+         InlineAsmRegClass::Avr(_) => unimplemented!(),
+         InlineAsmRegClass::Bpf(_) => unimplemented!(),
+         InlineAsmRegClass::Hexagon(HexagonInlineAsmRegClass::reg) => cx.type_i32(),
++        InlineAsmRegClass::LoongArch(LoongArchInlineAsmRegClass::reg) => cx.type_i32(),
++        InlineAsmRegClass::LoongArch(LoongArchInlineAsmRegClass::freg) => cx.type_f32(),
+         InlineAsmRegClass::Mips(MipsInlineAsmRegClass::reg) => cx.type_i32(),
+         InlineAsmRegClass::Mips(MipsInlineAsmRegClass::freg) => cx.type_f32(),
+         InlineAsmRegClass::Msp430(_) => unimplemented!(),
+@@ -772,6 +776,7 @@ fn modifier_to_gcc(arch: InlineAsmArch, reg: InlineAsmRegClass, modifier: Option
+         InlineAsmRegClass::Avr(_) => unimplemented!(),
+         InlineAsmRegClass::Bpf(_) => unimplemented!(),
+         InlineAsmRegClass::Hexagon(_) => unimplemented!(),
++        InlineAsmRegClass::LoongArch(_) => unimplemented!(),
+         InlineAsmRegClass::Mips(_) => unimplemented!(),
+         InlineAsmRegClass::Msp430(_) => unimplemented!(),
+         InlineAsmRegClass::Nvptx(_) => unimplemented!(),
+diff --git a/compiler/rustc_codegen_llvm/src/asm.rs b/compiler/rustc_codegen_llvm/src/asm.rs
+index a53946995ee..70b43045bd4 100644
+--- a/compiler/rustc_codegen_llvm/src/asm.rs
++++ b/compiler/rustc_codegen_llvm/src/asm.rs
+@@ -237,6 +237,7 @@ impl<'ll, 'tcx> AsmBuilderMethods<'tcx> for Builder<'_, 'll, 'tcx> {
+                 InlineAsmArch::Msp430 => {
+                     constraints.push("~{sr}".to_string());
+                 }
++                InlineAsmArch::LoongArch64 => {}
+             }
+         }
+         if !options.contains(InlineAsmOptions::NOMEM) {
+@@ -621,6 +622,8 @@ fn reg_to_llvm(reg: InlineAsmRegOrRegClass, layout: Option<&TyAndLayout<'_>>) ->
+             InlineAsmRegClass::SpirV(SpirVInlineAsmRegClass::reg) => {
+                 bug!("LLVM backend does not support SPIR-V")
+             }
++            InlineAsmRegClass::LoongArch(LoongArchInlineAsmRegClass::reg) => "r",
++            InlineAsmRegClass::LoongArch(LoongArchInlineAsmRegClass::freg) => "f",
+             InlineAsmRegClass::Err => unreachable!(),
+         }
+         .to_string(),
+@@ -713,6 +716,7 @@ fn modifier_to_llvm(
+         InlineAsmRegClass::SpirV(SpirVInlineAsmRegClass::reg) => {
+             bug!("LLVM backend does not support SPIR-V")
+         }
++        InlineAsmRegClass::LoongArch(_) => None,
+         InlineAsmRegClass::Err => unreachable!(),
+     }
+ }
+@@ -787,6 +791,8 @@ fn dummy_output_type<'ll>(cx: &CodegenCx<'ll, '_>, reg: InlineAsmRegClass) -> &'
+         InlineAsmRegClass::SpirV(SpirVInlineAsmRegClass::reg) => {
+             bug!("LLVM backend does not support SPIR-V")
+         }
++        InlineAsmRegClass::LoongArch(LoongArchInlineAsmRegClass::reg) => cx.type_i32(),
++        InlineAsmRegClass::LoongArch(LoongArchInlineAsmRegClass::freg) => cx.type_f32(),
+         InlineAsmRegClass::Err => unreachable!(),
+     }
+ }
+diff --git a/compiler/rustc_codegen_ssa/src/target_features.rs b/compiler/rustc_codegen_ssa/src/target_features.rs
+index ecad0518533..ce789c90dcd 100644
+--- a/compiler/rustc_codegen_ssa/src/target_features.rs
++++ b/compiler/rustc_codegen_ssa/src/target_features.rs
+@@ -201,6 +201,10 @@ const HEXAGON_ALLOWED_FEATURES: &[(&str, Option<Symbol>)] = &[
+     ("hvx-length128b", Some(sym::hexagon_target_feature)),
+ ];
+ 
++const LOONGARCH64_ALLOWED_FEATURES: &[(&str, Option<Symbol>)] =&[
++     ("d", Some(sym::loongarch64_target_feature)),
++     ("f", Some(sym::loongarch64_target_feature)),
++];
+ const POWERPC_ALLOWED_FEATURES: &[(&str, Option<Symbol>)] = &[
+     ("altivec", Some(sym::powerpc_target_feature)),
+     ("power8-altivec", Some(sym::powerpc_target_feature)),
+@@ -269,6 +273,7 @@ pub fn all_known_features() -> impl Iterator<Item = (&'static str, Option<Symbol
+         .chain(RISCV_ALLOWED_FEATURES.iter())
+         .chain(WASM_ALLOWED_FEATURES.iter())
+         .chain(BPF_ALLOWED_FEATURES.iter())
++        .chain(LOONGARCH64_ALLOWED_FEATURES.iter())
+         .cloned()
+ }
+ 
+@@ -283,6 +288,7 @@ pub fn supported_target_features(sess: &Session) -> &'static [(&'static str, Opt
+         "riscv32" | "riscv64" => RISCV_ALLOWED_FEATURES,
+         "wasm32" | "wasm64" => WASM_ALLOWED_FEATURES,
+         "bpf" => BPF_ALLOWED_FEATURES,
++        "loongarch64" => LOONGARCH64_ALLOWED_FEATURES,
+         _ => &[],
+     }
+ }
+diff --git a/compiler/rustc_feature/src/active.rs b/compiler/rustc_feature/src/active.rs
+index ef4a1756416..fe3a9cc6f6d 100644
+--- a/compiler/rustc_feature/src/active.rs
++++ b/compiler/rustc_feature/src/active.rs
+@@ -252,6 +252,7 @@ declare_features! (
+     (active, ermsb_target_feature, "1.49.0", Some(44839), None),
+     (active, f16c_target_feature, "1.36.0", Some(44839), None),
+     (active, hexagon_target_feature, "1.27.0", Some(44839), None),
++    (active, loongarch64_target_feature, "1.57.0", Some(44839), None),
+     (active, mips_target_feature, "1.27.0", Some(44839), None),
+     (active, movbe_target_feature, "1.34.0", Some(44839), None),
+     (active, powerpc_target_feature, "1.27.0", Some(44839), None),
+diff --git a/compiler/rustc_span/src/symbol.rs b/compiler/rustc_span/src/symbol.rs
+index 791160ff694..42195d694b6 100644
+--- a/compiler/rustc_span/src/symbol.rs
++++ b/compiler/rustc_span/src/symbol.rs
+@@ -884,6 +884,7 @@ symbols! {
+         log_syntax,
+         logf32,
+         logf64,
++        loongarch64_target_feature,
+         loop_break_value,
+         lt,
+         macro_at_most_once_rep,
+diff --git a/compiler/rustc_target/src/asm/loongarch.rs b/compiler/rustc_target/src/asm/loongarch.rs
+new file mode 100644
+index 00000000000..e4b6d0863c6
+--- /dev/null
++++ b/compiler/rustc_target/src/asm/loongarch.rs
+@@ -0,0 +1,132 @@
++use super::{InlineAsmArch, InlineAsmType};
++//use crate::spec::{RelocModel, Target};
++//use rustc_data_structures::fx::FxHashSet;
++use rustc_macros::HashStable_Generic;
++use rustc_span::{Symbol};
++use std::fmt;
++
++def_reg_class! {
++    LoongArch LoongArchInlineAsmRegClass {
++        reg,
++        freg,
++    }
++}
++
++impl LoongArchInlineAsmRegClass {
++    pub fn valid_modifiers(self, _arch: super::InlineAsmArch) -> &'static [char] {
++        &[]
++    }
++
++    pub fn suggest_class(self, _arch: InlineAsmArch, _ty: InlineAsmType) -> Option<Self> {
++        None
++    }
++
++    pub fn suggest_modifier(
++        self,
++        _arch: InlineAsmArch,
++        _ty: InlineAsmType,
++    ) -> Option<(char, &'static str)> {
++        None
++    }
++
++    pub fn default_modifier(self, _arch: InlineAsmArch) -> Option<(char, &'static str)> {
++        None
++    }
++
++    pub fn supported_types(
++        self,
++        arch: InlineAsmArch,
++    ) -> &'static [(InlineAsmType, Option<Symbol>)] {
++        match (self, arch) {
++            (Self::reg, InlineAsmArch::LoongArch64) => types! { _: I8, I16, I32, I64, F32, F64; },
++            (Self::reg, _) => types! { _: I8, I16, I32, F32; },
++            (Self::freg, _) => types! { _: F32, F64; },
++        }
++    }
++}
++
++def_regs! {
++    LoongArch LoongArchInlineAsmReg LoongArchInlineAsmRegClass {
++        r1: reg = ["$r1","$ra"],
++        r4: reg = ["$r4","$a0"],
++        r5: reg = ["$r5","$a1"],
++        r6: reg = ["$r6","$a2"],
++        r7: reg = ["$r7","$a3"],
++        r8: reg = ["$r8","$a4"],
++        r9: reg = ["$r9","$a5"],
++        r10: reg = ["$r10","$a6"],
++        r11: reg = ["$r11","$a7"],
++        r12: reg = ["$r12","$t0"],
++        r13: reg = ["$r13","$t1"],
++        r14: reg = ["$r14","$t2"],
++        r15: reg = ["$r15","$t3"],
++        r16: reg = ["$r16","$t4"],
++        r17: reg = ["$r17","$t5"],
++        r18: reg = ["$r18","$t6"],
++        r19: reg = ["$r19","$t7"],
++        r20: reg = ["$r20","$t8"],
++        r23: reg = ["$r23","$s0"],
++        r24: reg = ["$r24","$s1"],
++        r25: reg = ["$r25","$s2"],
++        r26: reg = ["$r26","$s3"],
++        r27: reg = ["$r27","$s4"],
++        r28: reg = ["$r28","$s5"],
++        r29: reg = ["$r29","$s6"],
++        r30: reg = ["$r30","$s7"],
++        f0: freg = ["$f0","$fa0"],
++        f1: freg = ["$f1","$fa1"],
++        f2: freg = ["$f2","$fa2"],
++        f3: freg = ["$f3","$fa3"],
++        f4: freg = ["$f4","$fa4"],
++        f5: freg = ["$f5","$fa5"],
++        f6: freg = ["$f6","$fa6"],
++        f7: freg = ["$f7","$fa7"],
++        f8: freg = ["$f8","$ft0"],
++        f9: freg = ["$f9","$ft1"],
++        f10: freg = ["$f10","$ft2"],
++        f11: freg = ["$f11","$ft3"],
++        f12: freg = ["$f12","$ft4"],
++        f13: freg = ["$f13","$ft5"],
++        f14: freg = ["$f14","$ft6"],
++        f15: freg = ["$f15","$ft7"],
++        f16: freg = ["$f16","$ft8"],
++        f17: freg = ["$f17","$ft9"],
++        f18: freg = ["$f18","$ft10"],
++        f19: freg = ["$f19","$ft11"],
++        f20: freg = ["$f20","$ft12"],
++        f21: freg = ["$f21","$ft13"],
++        f22: freg = ["$f22","$ft14"],
++        f23: freg = ["$f23","$ft15"],
++        f24: freg = ["$f24","$fs0"],
++        f25: freg = ["$f25","$fs1"],
++        f26: freg = ["$f26","$fs2"],
++        f27: freg = ["$f27","$fs3"],
++        f28: freg = ["$f28","$fs4"],
++        f29: freg = ["$f29","$fs5"],
++        f30: freg = ["$f30","$fs6"],
++        f31: freg = ["$f31","$fs7"],
++        #error = ["$r0", "$zero"] =>
++            "constant zero cannot be used as an operand for inline asm",
++        #error = ["$r2", "$tp"] =>
++            "reserved for TLS",
++        #error = ["$r3", "$sp"] =>
++            "the stack pointer cannot be used as an operand for inline asm",
++        #error = ["$r21", "$x"] =>
++            "reserved for ABI extension",
++        #error = ["$r22", "$fp"] =>
++            "the frame pointer cannot be used as an operand for inline asm",
++        #error = ["$r31", "$s8"] =>
++            "r31 is used internally by LLVM and cannot be used as an operand for inline asm",
++    }
++}
++
++impl LoongArchInlineAsmReg {
++    pub fn emit(
++        self,
++        out: &mut dyn fmt::Write,
++        _arch: InlineAsmArch,
++        _modifier: Option<char>,
++    ) -> fmt::Result {
++        out.write_str(self.name())
++    }
++}
+diff --git a/compiler/rustc_target/src/asm/mod.rs b/compiler/rustc_target/src/asm/mod.rs
+index 65d2cd64bf6..b279a3f5aa9 100644
+--- a/compiler/rustc_target/src/asm/mod.rs
++++ b/compiler/rustc_target/src/asm/mod.rs
+@@ -167,6 +167,7 @@ mod arm;
+ mod avr;
+ mod bpf;
+ mod hexagon;
++mod loongarch;
+ mod mips;
+ mod msp430;
+ mod nvptx;
+@@ -182,6 +183,7 @@ pub use arm::{ArmInlineAsmReg, ArmInlineAsmRegClass};
+ pub use avr::{AvrInlineAsmReg, AvrInlineAsmRegClass};
+ pub use bpf::{BpfInlineAsmReg, BpfInlineAsmRegClass};
+ pub use hexagon::{HexagonInlineAsmReg, HexagonInlineAsmRegClass};
++pub use loongarch::{LoongArchInlineAsmReg, LoongArchInlineAsmRegClass};
+ pub use mips::{MipsInlineAsmReg, MipsInlineAsmRegClass};
+ pub use msp430::{Msp430InlineAsmReg, Msp430InlineAsmRegClass};
+ pub use nvptx::{NvptxInlineAsmReg, NvptxInlineAsmRegClass};
+@@ -202,6 +204,7 @@ pub enum InlineAsmArch {
+     RiscV64,
+     Nvptx64,
+     Hexagon,
++    LoongArch64,
+     Mips,
+     Mips64,
+     PowerPC,
+@@ -230,6 +233,7 @@ impl FromStr for InlineAsmArch {
+             "powerpc" => Ok(Self::PowerPC),
+             "powerpc64" => Ok(Self::PowerPC64),
+             "hexagon" => Ok(Self::Hexagon),
++            "loongarch64" => Ok(Self::LoongArch64),
+             "mips" => Ok(Self::Mips),
+             "mips64" => Ok(Self::Mips64),
+             "s390x" => Ok(Self::S390x),
+@@ -254,6 +258,7 @@ pub enum InlineAsmReg {
+     Nvptx(NvptxInlineAsmReg),
+     PowerPC(PowerPCInlineAsmReg),
+     Hexagon(HexagonInlineAsmReg),
++    LoongArch(LoongArchInlineAsmReg),
+     Mips(MipsInlineAsmReg),
+     S390x(S390xInlineAsmReg),
+     SpirV(SpirVInlineAsmReg),
+@@ -274,6 +279,7 @@ impl InlineAsmReg {
+             Self::RiscV(r) => r.name(),
+             Self::PowerPC(r) => r.name(),
+             Self::Hexagon(r) => r.name(),
++            Self::LoongArch(r) => r.name(),
+             Self::Mips(r) => r.name(),
+             Self::S390x(r) => r.name(),
+             Self::Bpf(r) => r.name(),
+@@ -291,6 +297,7 @@ impl InlineAsmReg {
+             Self::RiscV(r) => InlineAsmRegClass::RiscV(r.reg_class()),
+             Self::PowerPC(r) => InlineAsmRegClass::PowerPC(r.reg_class()),
+             Self::Hexagon(r) => InlineAsmRegClass::Hexagon(r.reg_class()),
++            Self::LoongArch(r) => InlineAsmRegClass::LoongArch(r.reg_class()),
+             Self::Mips(r) => InlineAsmRegClass::Mips(r.reg_class()),
+             Self::S390x(r) => InlineAsmRegClass::S390x(r.reg_class()),
+             Self::Bpf(r) => InlineAsmRegClass::Bpf(r.reg_class()),
+@@ -316,6 +323,7 @@ impl InlineAsmReg {
+                 Self::PowerPC(PowerPCInlineAsmReg::parse(name)?)
+             }
+             InlineAsmArch::Hexagon => Self::Hexagon(HexagonInlineAsmReg::parse(name)?),
++            InlineAsmArch::LoongArch64 => Self::LoongArch(LoongArchInlineAsmReg::parse(name)?),
+             InlineAsmArch::Mips | InlineAsmArch::Mips64 => {
+                 Self::Mips(MipsInlineAsmReg::parse(name)?)
+             }
+@@ -350,6 +358,7 @@ impl InlineAsmReg {
+             Self::Bpf(r) => r.validate(arch, reloc_model, target_features, target, is_clobber),
+             Self::Avr(r) => r.validate(arch, reloc_model, target_features, target, is_clobber),
+             Self::Msp430(r) => r.validate(arch, reloc_model, target_features, target, is_clobber),
++            Self::LoongArch(r) => r.validate(arch, reloc_model, target_features, target, is_clobber),
+             Self::Err => unreachable!(),
+         }
+     }
+@@ -369,6 +378,7 @@ impl InlineAsmReg {
+             Self::RiscV(r) => r.emit(out, arch, modifier),
+             Self::PowerPC(r) => r.emit(out, arch, modifier),
+             Self::Hexagon(r) => r.emit(out, arch, modifier),
++            Self::LoongArch(r) => r.emit(out, arch, modifier),
+             Self::Mips(r) => r.emit(out, arch, modifier),
+             Self::S390x(r) => r.emit(out, arch, modifier),
+             Self::Bpf(r) => r.emit(out, arch, modifier),
+@@ -386,6 +396,7 @@ impl InlineAsmReg {
+             Self::RiscV(_) => cb(self),
+             Self::PowerPC(r) => r.overlapping_regs(|r| cb(Self::PowerPC(r))),
+             Self::Hexagon(r) => r.overlapping_regs(|r| cb(Self::Hexagon(r))),
++            Self::LoongArch(_) => cb(self),
+             Self::Mips(_) => cb(self),
+             Self::S390x(_) => cb(self),
+             Self::Bpf(r) => r.overlapping_regs(|r| cb(Self::Bpf(r))),
+@@ -406,6 +417,7 @@ pub enum InlineAsmRegClass {
+     Nvptx(NvptxInlineAsmRegClass),
+     PowerPC(PowerPCInlineAsmRegClass),
+     Hexagon(HexagonInlineAsmRegClass),
++    LoongArch(LoongArchInlineAsmRegClass),
+     Mips(MipsInlineAsmRegClass),
+     S390x(S390xInlineAsmRegClass),
+     SpirV(SpirVInlineAsmRegClass),
+@@ -427,6 +439,7 @@ impl InlineAsmRegClass {
+             Self::Nvptx(r) => r.name(),
+             Self::PowerPC(r) => r.name(),
+             Self::Hexagon(r) => r.name(),
++            Self::LoongArch(r) => r.name(),
+             Self::Mips(r) => r.name(),
+             Self::S390x(r) => r.name(),
+             Self::SpirV(r) => r.name(),
+@@ -450,6 +463,7 @@ impl InlineAsmRegClass {
+             Self::Nvptx(r) => r.suggest_class(arch, ty).map(InlineAsmRegClass::Nvptx),
+             Self::PowerPC(r) => r.suggest_class(arch, ty).map(InlineAsmRegClass::PowerPC),
+             Self::Hexagon(r) => r.suggest_class(arch, ty).map(InlineAsmRegClass::Hexagon),
++            Self::LoongArch(r) => r.suggest_class(arch, ty).map(InlineAsmRegClass::LoongArch),
+             Self::Mips(r) => r.suggest_class(arch, ty).map(InlineAsmRegClass::Mips),
+             Self::S390x(r) => r.suggest_class(arch, ty).map(InlineAsmRegClass::S390x),
+             Self::SpirV(r) => r.suggest_class(arch, ty).map(InlineAsmRegClass::SpirV),
+@@ -480,6 +494,7 @@ impl InlineAsmRegClass {
+             Self::Nvptx(r) => r.suggest_modifier(arch, ty),
+             Self::PowerPC(r) => r.suggest_modifier(arch, ty),
+             Self::Hexagon(r) => r.suggest_modifier(arch, ty),
++            Self::LoongArch(r) => r.suggest_modifier(arch, ty),
+             Self::Mips(r) => r.suggest_modifier(arch, ty),
+             Self::S390x(r) => r.suggest_modifier(arch, ty),
+             Self::SpirV(r) => r.suggest_modifier(arch, ty),
+@@ -506,6 +521,7 @@ impl InlineAsmRegClass {
+             Self::Nvptx(r) => r.default_modifier(arch),
+             Self::PowerPC(r) => r.default_modifier(arch),
+             Self::Hexagon(r) => r.default_modifier(arch),
++            Self::LoongArch(r) => r.default_modifier(arch),
+             Self::Mips(r) => r.default_modifier(arch),
+             Self::S390x(r) => r.default_modifier(arch),
+             Self::SpirV(r) => r.default_modifier(arch),
+@@ -531,6 +547,7 @@ impl InlineAsmRegClass {
+             Self::Nvptx(r) => r.supported_types(arch),
+             Self::PowerPC(r) => r.supported_types(arch),
+             Self::Hexagon(r) => r.supported_types(arch),
++            Self::LoongArch(r) => r.supported_types(arch),
+             Self::Mips(r) => r.supported_types(arch),
+             Self::S390x(r) => r.supported_types(arch),
+             Self::SpirV(r) => r.supported_types(arch),
+@@ -568,6 +585,9 @@ impl InlineAsmRegClass {
+             InlineAsmArch::Bpf => Self::Bpf(BpfInlineAsmRegClass::parse(name)?),
+             InlineAsmArch::Avr => Self::Avr(AvrInlineAsmRegClass::parse(name)?),
+             InlineAsmArch::Msp430 => Self::Msp430(Msp430InlineAsmRegClass::parse(name)?),
++            InlineAsmArch::LoongArch64 => {
++                Self::LoongArch(LoongArchInlineAsmRegClass::parse(name)?)
++            }
+         })
+     }
+ 
+@@ -582,6 +602,7 @@ impl InlineAsmRegClass {
+             Self::Nvptx(r) => r.valid_modifiers(arch),
+             Self::PowerPC(r) => r.valid_modifiers(arch),
+             Self::Hexagon(r) => r.valid_modifiers(arch),
++            Self::LoongArch(r) => r.valid_modifiers(arch),
+             Self::Mips(r) => r.valid_modifiers(arch),
+             Self::S390x(r) => r.valid_modifiers(arch),
+             Self::SpirV(r) => r.valid_modifiers(arch),
+@@ -740,6 +761,11 @@ pub fn allocatable_registers(
+             hexagon::fill_reg_map(arch, reloc_model, target_features, target, &mut map);
+             map
+         }
++        InlineAsmArch::LoongArch64 => {
++            let mut map = loongarch::regclass_map();
++            loongarch::fill_reg_map(arch, reloc_model, target_features, target, &mut map);
++            map
++        }
+         InlineAsmArch::Mips | InlineAsmArch::Mips64 => {
+             let mut map = mips::regclass_map();
+             mips::fill_reg_map(arch, reloc_model, target_features, target, &mut map);
+diff --git a/compiler/rustc_typeck/src/collect.rs b/compiler/rustc_typeck/src/collect.rs
+index 99996e80c9c..836ba970b62 100644
+--- a/compiler/rustc_typeck/src/collect.rs
++++ b/compiler/rustc_typeck/src/collect.rs
+@@ -2631,6 +2631,7 @@ fn from_target_feature(
+             let allowed = match feature_gate.as_ref().copied() {
+                 Some(sym::arm_target_feature) => rust_features.arm_target_feature,
+                 Some(sym::hexagon_target_feature) => rust_features.hexagon_target_feature,
++                Some(sym::loongarch64_target_feature) => rust_features.loongarch64_target_feature,
+                 Some(sym::powerpc_target_feature) => rust_features.powerpc_target_feature,
+                 Some(sym::mips_target_feature) => rust_features.mips_target_feature,
+                 Some(sym::riscv_target_feature) => rust_features.riscv_target_feature,
+diff --git a/library/core/src/lib.rs b/library/core/src/lib.rs
+index 24742bb49b9..7b2c1f8ca91 100644
+--- a/library/core/src/lib.rs
++++ b/library/core/src/lib.rs
+@@ -214,6 +214,7 @@
+ #![feature(cmpxchg16b_target_feature)]
+ #![feature(f16c_target_feature)]
+ #![feature(hexagon_target_feature)]
++//#![feature(loongarch64_target_feature)]
+ #![feature(mips_target_feature)]
+ #![feature(powerpc_target_feature)]
+ #![feature(rtm_target_feature)]
+diff --git a/src/test/assembly/asm/loongarch-types.rs b/src/test/assembly/asm/loongarch-types.rs
+new file mode 100644
+index 00000000000..9c116f730db
+--- /dev/null
++++ b/src/test/assembly/asm/loongarch-types.rs
+@@ -0,0 +1,194 @@
++// min-llvm-version: 10.0.1
++// assembly-output: emit-asm
++// compile-flags: --target loongarch64-unknown-linux-gnu
++// needs-llvm-components: loongarch
++
++#![feature(no_core, lang_items, rustc_attrs, asm_sym)]
++#![crate_type = "rlib"]
++#![no_core]
++#![allow(asm_sub_register)]
++
++#[rustc_builtin_macro]
++macro_rules! asm {
++    () => {};
++}
++#[rustc_builtin_macro]
++macro_rules! concat {
++    () => {};
++}
++#[rustc_builtin_macro]
++macro_rules! stringify {
++    () => {};
++}
++
++#[lang = "sized"]
++trait Sized {}
++#[lang = "copy"]
++trait Copy {}
++
++type ptr = *const i32;
++
++impl Copy for i8 {}
++impl Copy for i16 {}
++impl Copy for i32 {}
++impl Copy for i64 {}
++impl Copy for f32 {}
++impl Copy for f64 {}
++impl Copy for ptr {}
++extern "C" {
++    fn extern_func();
++    static extern_static: u8;
++}
++
++// Hack to avoid function merging
++extern "Rust" {
++    fn dont_merge(s: &str);
++}
++
++// CHECK-LABEL: sym_fn:
++// CHECK: #APP
++// CHECK: la.got $r12, extern_func
++// CHECK: #NO_APP
++#[no_mangle]
++pub unsafe fn sym_fn() {
++    asm!("la.got $r12, {}", sym extern_func);
++}
++
++// CHECK-LABEL: sym_static:
++// CHECK: #APP
++// CHECK: la.got $r12, extern_static
++// CHECK: #NO_APP
++#[no_mangle]
++pub unsafe fn sym_static() {
++    asm!("la.got $r12, {}", sym extern_static);
++}
++
++macro_rules! check { ($func:ident, $ty:ty, $class:ident, $mov:literal) => {
++    #[no_mangle]
++    pub unsafe fn $func(x: $ty) -> $ty {
++        dont_merge(stringify!($func));
++
++        let y;
++        asm!(concat!($mov," {}, {}"), out($class) y, in($class) x);
++        y
++    }
++};}
++
++macro_rules! check_reg { ($func:ident, $ty:ty, $reg:tt, $mov:literal) => {
++    #[no_mangle]
++    pub unsafe fn $func(x: $ty) -> $ty {
++        dont_merge(stringify!($func));
++
++        let y;
++        asm!(concat!($mov, " ", $reg, ", ", $reg), lateout($reg) y, in($reg) x);
++        y
++    }
++};}
++
++// CHECK-LABEL: reg_i8:
++// CHECK: #APP
++// CHECK: move $r{{[0-9]+}}, $r{{[0-9]+}}
++// CHECK: #NO_APP
++check!(reg_i8, i8, reg, "move");
++
++// CHECK-LABEL: reg_i16:
++// CHECK: #APP
++// CHECK: move $r{{[0-9]+}}, $r{{[0-9]+}}
++// CHECK: #NO_APP
++check!(reg_i16, i16, reg, "move");
++
++// CHECK-LABEL: reg_i32:
++// CHECK: #APP
++// CHECK: move $r{{[0-9]+}}, $r{{[0-9]+}}
++// CHECK: #NO_APP
++check!(reg_i32, i32, reg, "move");
++
++// CHECK-LABEL: reg_f32:
++// CHECK: #APP
++// CHECK: move $r{{[0-9]+}}, $r{{[0-9]+}}
++// CHECK: #NO_APP
++check!(reg_f32, f32, reg, "move");
++
++// CHECK-LABEL: reg_i64:
++// CHECK: #APP
++// CHECK: move $r{{[0-9]+}}, $r{{[0-9]+}}
++// CHECK: #NO_APP
++check!(reg_i64, i64, reg, "move");
++
++// CHECK-LABEL: reg_f64:
++// CHECK: #APP
++// CHECK: move $r{{[0-9]+}}, $r{{[0-9]+}}
++// CHECK: #NO_APP
++check!(reg_f64, f64, reg, "move");
++
++// CHECK-LABEL: reg_ptr:
++// CHECK: #APP
++// CHECK: move $r{{[0-9]+}}, $r{{[0-9]+}}
++// CHECK: #NO_APP
++check!(reg_ptr, ptr, reg, "move");
++
++// CHECK-LABEL: freg_f32:
++// CHECK: #APP
++// CHECK: fmov.s $f{{[0-9]+}}, $f{{[0-9]+}}
++// CHECK: #NO_APP
++check!(freg_f32, f32, freg, "fmov.s");
++
++// CHECK-LABEL: freg_f64:
++// CHECK: #APP
++// CHECK: fmov.d $f{{[0-9]+}}, $f{{[0-9]+}}
++// CHECK: #NO_APP
++check!(freg_f64, f64, freg, "fmov.d");
++
++// CHECK-LABEL: r4_i8:
++// CHECK: #APP
++// CHECK: move $r4, $r4
++// CHECK: #NO_APP
++check_reg!(r4_i8, i8, "$r4", "move");
++
++// CHECK-LABEL: r4_i16:
++// CHECK: #APP
++// CHECK: move $r4, $r4
++// CHECK: #NO_APP
++check_reg!(r4_i16, i16, "$r4", "move");
++
++// CHECK-LABEL: r4_i32:
++// CHECK: #APP
++// CHECK: move $r4, $r4
++// CHECK: #NO_APP
++check_reg!(r4_i32, i32, "$r4", "move");
++
++// CHECK-LABEL: r4_f32:
++// CHECK: #APP
++// CHECK: move $r4, $r4
++// CHECK: #NO_APP
++check_reg!(r4_f32, f32, "$r4", "move");
++
++// CHECK-LABEL: r4_i64:
++// CHECK: #APP
++// CHECK: move $r4, $r4
++// CHECK: #NO_APP
++check_reg!(r4_i64, i64, "$r4", "move");
++
++// CHECK-LABEL: r4_f64:
++// CHECK: #APP
++// CHECK: move $r4, $r4
++// CHECK: #NO_APP
++check_reg!(r4_f64, f64, "$r4", "move");
++
++// CHECK-LABEL: r4_ptr:
++// CHECK: #APP
++// CHECK: move $r4, $r4
++// CHECK: #NO_APP
++check_reg!(r4_ptr, ptr, "$r4", "move");
++
++// CHECK-LABEL: f0_f32:
++// CHECK: #APP
++// CHECK: fmov.s $f{{[0-9]+}}, $f{{[0-9]+}}
++// CHECK: #NO_APP
++check_reg!(f0_f32, f32, "$f0", "fmov.s");
++
++// CHECK-LABEL: f0_f64:
++// CHECK: #APP
++// CHECK: fmov.d $f{{[0-9]+}}, $f{{[0-9]+}}
++// CHECK: #NO_APP
++check_reg!(f0_f64, f64, "$f0", "fmov.d");
