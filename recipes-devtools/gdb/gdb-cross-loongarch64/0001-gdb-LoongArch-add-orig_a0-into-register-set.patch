@@ -1,0 +1,134 @@
+From 1306cc6001b874fb628acd581e59177e65aff242 Mon Sep 17 00:00:00 2001
+From: Xi Ruoyao <xry111@xry111.site>
+Date: Tue, 5 Jul 2022 19:30:12 +0800
+Subject: [PATCH] gdb: LoongArch: add orig_a0 into register set
+
+The basic support for LoongArch has been merged into the upstream Linux
+kernel since 5.19-rc1 on June 5, 2022.  This commit adds orig_a0 which
+is added into struct user_pt_regs [1] to match the upstream kernel, and
+then the upstream GDB will work with the upstream kernel.
+
+Note that orig_a0 was added into struct user_pt_regs in the development
+cycle for merging LoongArch port into the upstream Linux kernel, so
+earlier kernels (notably, the product kernel with version 4.19 used in
+distros like UOS and Loongnix) don't have it.  Inspect
+arch/loongarch/include/uapi/asm/ptrace.h in the kernel tree to make sure.
+To build upstream GDB for a kernel lacking orig_a0, it's necessary to
+revert this commit locally.
+
+[1]: https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/tree/arch/loongarch/include/uapi/asm/ptrace.h#n24
+
+Signed-off-by: Xi Ruoyao <xry111@xry111.site>
+Signed-off-by: Tiezhu Yang <yangtiezhu@loongson.cn>
+---
+ gdb/features/loongarch/base32.c   | 1 +
+ gdb/features/loongarch/base32.xml | 1 +
+ gdb/features/loongarch/base64.c   | 1 +
+ gdb/features/loongarch/base64.xml | 1 +
+ gdb/loongarch-linux-nat.c         | 2 +-
+ gdb/loongarch-linux-tdep.c        | 4 ++++
+ gdb/loongarch-tdep.c              | 2 ++
+ gdb/loongarch-tdep.h              | 1 +
+ 8 files changed, 12 insertions(+), 1 deletion(-)
+
+diff --git a/gdb/features/loongarch/base32.c b/gdb/features/loongarch/base32.c
+index 7105c15..3fb35ef 100644
+--- a/gdb/features/loongarch/base32.c
++++ b/gdb/features/loongarch/base32.c
+@@ -41,6 +41,7 @@ create_feature_loongarch_base32 (struct target_desc *result, long regnum)
+   tdesc_create_reg (feature, "r29", regnum++, 1, "general", 32, "uint32");
+   tdesc_create_reg (feature, "r30", regnum++, 1, "general", 32, "uint32");
+   tdesc_create_reg (feature, "r31", regnum++, 1, "general", 32, "uint32");
++  tdesc_create_reg (feature, "orig_a0", regnum++, 1, "general", 32, "uint32");
+   tdesc_create_reg (feature, "pc", regnum++, 1, "general", 32, "code_ptr");
+   tdesc_create_reg (feature, "badv", regnum++, 1, "general", 32, "code_ptr");
+   return regnum;
+diff --git a/gdb/features/loongarch/base32.xml b/gdb/features/loongarch/base32.xml
+index 5b00f8a..af47bbd 100644
+--- a/gdb/features/loongarch/base32.xml
++++ b/gdb/features/loongarch/base32.xml
+@@ -39,6 +39,7 @@
+   <reg name="r29" bitsize="32" type="uint32" group="general"/>
+   <reg name="r30" bitsize="32" type="uint32" group="general"/>
+   <reg name="r31" bitsize="32" type="uint32" group="general"/>
++  <reg name="orig_a0" bitsize="32" type="uint32" group="general"/>
+   <reg name="pc" bitsize="32" type="code_ptr" group="general"/>
+   <reg name="badv" bitsize="32" type="code_ptr" group="general"/>
+ </feature>
+diff --git a/gdb/features/loongarch/base64.c b/gdb/features/loongarch/base64.c
+index 63eee02..d84d425 100644
+--- a/gdb/features/loongarch/base64.c
++++ b/gdb/features/loongarch/base64.c
+@@ -41,6 +41,7 @@ create_feature_loongarch_base64 (struct target_desc *result, long regnum)
+   tdesc_create_reg (feature, "r29", regnum++, 1, "general", 64, "uint64");
+   tdesc_create_reg (feature, "r30", regnum++, 1, "general", 64, "uint64");
+   tdesc_create_reg (feature, "r31", regnum++, 1, "general", 64, "uint64");
++  tdesc_create_reg (feature, "orig_a0", regnum++, 1, "general", 64, "uint64");
+   tdesc_create_reg (feature, "pc", regnum++, 1, "general", 64, "code_ptr");
+   tdesc_create_reg (feature, "badv", regnum++, 1, "general", 64, "code_ptr");
+   return regnum;
+diff --git a/gdb/features/loongarch/base64.xml b/gdb/features/loongarch/base64.xml
+index bef91e5..2d8a1f6 100644
+--- a/gdb/features/loongarch/base64.xml
++++ b/gdb/features/loongarch/base64.xml
+@@ -39,6 +39,7 @@
+   <reg name="r29" bitsize="64" type="uint64" group="general"/>
+   <reg name="r30" bitsize="64" type="uint64" group="general"/>
+   <reg name="r31" bitsize="64" type="uint64" group="general"/>
++  <reg name="orig_a0" bitsize="64" type="uint64" group="general"/>
+   <reg name="pc" bitsize="64" type="code_ptr" group="general"/>
+   <reg name="badv" bitsize="64" type="code_ptr" group="general"/>
+ </feature>
+diff --git a/gdb/loongarch-linux-nat.c b/gdb/loongarch-linux-nat.c
+index edc3d69..b6b8318 100644
+--- a/gdb/loongarch-linux-nat.c
++++ b/gdb/loongarch-linux-nat.c
+@@ -56,7 +56,7 @@ fetch_gregs_from_thread (struct regcache *regcache, int regno, pid_t tid)
+   elf_gregset_t regset;
+ 
+   if (regno == -1 || (regs.r <= regno && regno < regs.r + 32)
+-      || regs.pc == regno || regs.badv == regno)
++      || regs.orig_a0 == regno || regs.pc == regno || regs.badv == regno)
+   {
+     struct iovec iov;
+ 
+diff --git a/gdb/loongarch-linux-tdep.c b/gdb/loongarch-linux-tdep.c
+index 6c040c3..19ea9e2 100644
+--- a/gdb/loongarch-linux-tdep.c
++++ b/gdb/loongarch-linux-tdep.c
+@@ -51,6 +51,10 @@ loongarch_supply_gregset (const struct regset *r,
+ 	  regcache->raw_supply (regs.r + i, (const void *) buf);
+ 	}
+ 
++      /* Size base (orig_a0) = regsize * regs.orig_a0.  */
++      buf = (const gdb_byte*) gprs + regsize * regs.orig_a0;
++      regcache->raw_supply (regs.orig_a0, (const void *) buf);
++
+       /* Size base (pc) = regsize * regs.pc.  */
+       buf = (const gdb_byte*) gprs + regsize * regs.pc;
+       regcache->raw_supply (regs.pc, (const void *) buf);
+diff --git a/gdb/loongarch-tdep.c b/gdb/loongarch-tdep.c
+index 0eda163..40898e2 100644
+--- a/gdb/loongarch-tdep.c
++++ b/gdb/loongarch-tdep.c
+@@ -217,6 +217,8 @@ loongarch_gdbarch_init (struct gdbarch_info info, struct gdbarch_list *arches)
+   for (int i = 0; i < 32; i++)
+     valid_p &= tdesc_numbered_register (feature_cpu, tdesc_data.get (), regnum++,
+ 					loongarch_r_normal_name[i] + 1);
++  valid_p &= tdesc_numbered_register (feature_cpu, tdesc_data.get (),
++				      tdep->regs.orig_a0 = regnum++, "orig_a0");
+   valid_p &= tdesc_numbered_register (feature_cpu, tdesc_data.get (),
+ 				      tdep->regs.pc = regnum++, "pc");
+   valid_p &= tdesc_numbered_register (feature_cpu, tdesc_data.get (),
+diff --git a/gdb/loongarch-tdep.h b/gdb/loongarch-tdep.h
+index b2fd16e..1f2b667 100644
+--- a/gdb/loongarch-tdep.h
++++ b/gdb/loongarch-tdep.h
+@@ -41,6 +41,7 @@ struct loongarch_gdbarch_tdep : gdbarch_tdep
+     int r;	/* General register. */
+     int ra;	/* Return Address.  */
+     int sp;	/* Stack Pointer.  */
++    int orig_a0; /* original a0 */
+     int pc;	/* Program Counter.  */
+     int badv;	/* Bad vaddr for addressing exception.  */
+   } regs;	/* LoongArch registers  */
