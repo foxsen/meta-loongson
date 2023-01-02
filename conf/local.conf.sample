@@ -280,6 +280,6 @@ PACKAGECONFIG:append:pn-qemu-system-native = " sdl"
 # this doesn't mean anything to you.
 CONF_VERSION = "2"
 
-PREFERRED_PROVIDER_virtual/kernel ?= "linux-yocto-loongarch"
+PREFERRED_PROVIDER_virtual/kernel ?= "linux-yocto-dev"
 
 IMAGE_INSTALL:append = " edk2-loongarch"
