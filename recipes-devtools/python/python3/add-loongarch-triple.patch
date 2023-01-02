@@ -1,0 +1,11 @@
+--- Python-3.11.1/configure.ac.ori	2023-01-02 17:22:11.811803138 +0800
++++ Python-3.11.1/configure.ac	2023-01-02 17:21:17.849615015 +0800
+@@ -939,6 +939,8 @@
+         x86_64-linux-gnux32
+ # elif defined(__i386__)
+         i386-linux-gnu
++# elif defined(__loongarch64)
++        loongarch64-linux-gnu
+ # elif defined(__aarch64__) && defined(__AARCH64EL__)
+ #  if defined(__ILP32__)
+         aarch64_ilp32-linux-gnu
